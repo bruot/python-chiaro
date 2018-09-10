@@ -7,6 +7,7 @@
 @date: 10 September 2018
 """
 
+import os as _os
 import numpy as _numpy
 import datetime as _datetime
 import matplotlib.pyplot as _plt
@@ -54,11 +55,11 @@ class Indentation(object):
     """Indentation experiment data reader"""
 
     def __repr__(self):
-        return '<Indentation: %s>' % self.name
+        return '<Indentation: %s>' % str(self)
 
 
     def __str__(self):
-        return self.name
+        return _os.path.splitext(_os.path.split(self.path)[1])[0]
 
 
     def __init__(self, path):
