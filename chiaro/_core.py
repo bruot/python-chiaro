@@ -10,6 +10,7 @@
 import os as _os
 import numpy as _numpy
 import datetime as _datetime
+import re as _re
 import matplotlib.pyplot as _plt
 
 
@@ -130,13 +131,13 @@ class Indentation(object):
             if val == 'Not used in single indent mode':
                 self.auto_find_surf = None
             else:
-                raise ValueError('Auto find surface: Value not supported yet.')
+                self.auto_find_surf = val == 'ON'
             # Line 16
             val = _parse_single_field(f.readline(), 'dX before scan (um)')
             if val == 'Only available in auto find surface mode':
                 self.dx_before_z_scan = None
             else:
-                raise ValueError('dX before scan (um): Value not supported yet.')
+                self.dx_before_z_scan = float(val)
             f.readline()
 
             # Line 18
@@ -174,8 +175,8 @@ class Indentation(object):
             self.D_final = float(_parse_single_field(f.readline(),
                                                      'D[final] (nm)')) * 1e-3
             # Line 25 + n_pts
-            self.D_max_min_final = float(_parse_single_field(f.readline(),
-                                                             'D[max-final] (nm)')) * 1e3
+            self.D_max_final = float(_parse_single_field(f.readline(),
+                                                         'D[max-final] (nm)')) * 1e3
             # Line 26 + n_pts
             self.slope = float(_parse_single_field(f.readline(),
                                                    'Slope (N/m)'))
@@ -240,3 +241,203 @@ class Indentation(object):
         _plt.plot(self.z_i, self.load)
         _plt.xlabel('z (µm)')
         _plt.ylabel('Load (µN)')
+
+
+class MatrixScan(object):
+    """Matrix scan experiment data reader"""
+
+    def _requires_complete(func):
+        """Decorator that raises an exception if the _complete attribute is False"""
+
+        def wrapping_func(*args, **kwargs):
+            instance = args[0]
+            if not instance._complete:
+                raise ValueError('Incomplete dataset.')
+            return func(*args, **kwargs)
+
+        return wrapping_func
+
+
+    def __repr__(self):
+        return '<Matrix scan: %s>' % str(self)
+
+
+    def __str__(self):
+        return '%s %s' % (self.name, _os.path.split(self.path)[1])
+
+
+    def __getitem__(self, index):
+        """Returns the indentation of given index
+
+        Args:
+            index: Index of the indentation.
+
+        Returns:
+            indentation: An instance of Indentation.
+        """
+
+        return self.indentation(self.scan_coords[index])
+
+
+    def __len__(self):
+        return len(self.scan_coords)
+
+
+    def __init__(self, path):
+        """Instantiates a MatrixScan object
+
+        Args:
+            path: Path of the directory containing the scan data files created
+                in the experiment with the Chiaro indenter.
+        """
+
+        self.path = path.rstrip(r'\/')
+
+        filenames = _os.listdir(path)
+
+        # Determine experiment name, number of scans, x, y, and indentations.
+        regexp = _re.compile(r'^(.*) S\-([0-9]+) X\-([0-9]+) Y\-([0-9]+) I\-([0-9]+)\.txt$')
+        scan_coords = []
+        for filename in filenames:
+            m = _re.match(regexp, filename)
+            first = True
+            if m:
+                groups = m.groups()
+                if first:
+                    self.name = groups[0]
+                    first = False
+                coords = [int(val) for val in groups[1:]]
+                scan_coords.append(coords)
+        scan_coords = _numpy.array(scan_coords, dtype=_numpy.int32)
+        scan_coords.view('i4,' * 4).sort(axis=0, order=['f0', 'f1', 'f2', 'f3'])
+        self.scan_coords = scan_coords
+
+        # Get number of scans, x, y and indentations.
+        if len(scan_coords) == 0:
+            raise ValueError('No indentations found.')
+        self.n_s, self.n_x, self.n_y, self.n_i = _numpy.max(scan_coords, axis=0)
+        # Check that all expected indentations are present.  If so, set
+        # _complete to True.
+        self._complete = True
+        for s in range(self.n_s):
+            for x in range(self.n_x):
+                for y in range(self.n_y):
+                    for i in range(self.n_i):
+                        if not any((scan_coords == [s+1, x+1, y+1, i+1]).all(axis=1)):
+                            self._complete = False
+        # We also check for the summary file
+        filename = '%s S-%d E-eff vs XY position.txt' % (self.name, self.n_s)
+        if filename in filenames:
+            with open(_os.path.join(path, filename), 'r') as f:
+                line = f.readline()
+                if not line.startswith('X Stepsize '):
+                    raise ValueError('Cannot parse X Stepsize in "%s".' % filename)
+                self.delta_x = float(line[11:])
+                line = f.readline()
+                if not line.startswith('Y Stepsize '):
+                    raise ValueError('Cannot parse Y Stepsize in "%s".' % filename)
+                self.delta_y = float(line[11:])
+        else:
+            self._complete = False
+
+        n = len(self.scan_coords)
+        self.x_pos = _numpy.empty(n)
+        self.y_pos = _numpy.empty(n)
+        self.z_pos = _numpy.empty(n)
+        self.z_surf = _numpy.empty(n)
+        self.piezo_pos = _numpy.empty(n)
+        self.piezo_pos_setpoint_at_start = _numpy.empty(n)
+        self.P_max = _numpy.empty(n)
+        self.D_max = _numpy.empty(n)
+        self.D_final = _numpy.empty(n)
+        self.D_max_final = _numpy.empty(n)
+        self.slope = _numpy.empty(n)
+        self.E_eff = _numpy.empty(n)
+        self.E_half_v = _numpy.empty(n)
+        for k, c in enumerate(scan_coords):
+            i = self.indentation(c)
+            self.x_pos[k] = i.x_pos
+            self.y_pos[k] = i.y_pos
+            self.z_pos[k] = i.z_pos
+            self.z_surf[k] = i.z_surf
+            self.piezo_pos[k] = i.piezo_pos
+            self.piezo_pos_setpoint_at_start[k] = i.piezo_pos_setpoint_at_start
+            self.P_max[k] = i.P_max
+            self.D_max[k] = i.D_max
+            self.D_final[k] = i.D_final
+            self.D_max_final[k] = i.D_max_final
+            self.slope[k] = i.slope
+            self.E_eff[k] = i.E_eff
+            self.E_half_v[k] = i.E_half_v
+
+
+    def indentation(self, coords):
+        """Returns the indentation corresponding to the requested coordinates
+
+        Args:
+            coords: (scan, x, y, indentation) coordinates.
+
+        Returns:
+            indentation: An instance of Indentation.
+        """
+
+        filename = '%s S-%d X-%d Y-%d I-%d.txt' % (self.name, coords[0],
+                                                   coords[1], coords[2],
+                                                   coords[3])
+        path = _os.path.join(self.path, filename)
+
+        return Indentation(path)
+
+
+    def plot_young_moduli(self):
+        """Plots E_eff and E_half_v against indentation index"""
+
+        _plt.plot(self.E_half_v * 1e-3)
+        _plt.plot(self.E_eff * 1e-3)
+        _plt.xlabel('Indentation')
+        _plt.ylabel('E (kPa)')
+        _plt.legend(['Effective', 'At v = 0.5'])
+
+
+    @_requires_complete
+    def plot_e_half_v_map(self):
+
+        E_map = _numpy.empty((self.n_x, self.n_y))
+        for i in range(self.n_x):
+            for j in range(self.n_y):
+                E_sub = self.E_half_v[
+                        (self.scan_coords[:, 1] == i+1)
+                        & (self.scan_coords[:, 2] == j+1)
+                        ]
+                E_map[i, j] = _numpy.mean(E_sub)
+
+        _plt.imshow(E_map.T * 1e-3, extent=[
+                                            0, self.n_x * self.delta_x,
+                                            self.n_y * self.delta_y, 0,
+                                           ])
+        _plt.gca().invert_yaxis()
+        _plt.xlabel('x (µm)')
+        _plt.ylabel('y (µm)')
+        cb = _plt.colorbar()
+        cb.set_label('E[nu=0.5] (kPa)')
+
+
+    @_requires_complete
+    def plot_piezo_pos_map(self):
+
+        z_map = _numpy.empty((self.n_x, self.n_y))
+        for i in range(self.n_x):
+            for j in range(self.n_y):
+                rg = (self.scan_coords[:, 1] == i+1) & (self.scan_coords[:, 2] == j+1)
+                z_sub = self.piezo_pos[rg]
+                z_map[i, j] = _numpy.mean(z_sub)
+
+        _plt.imshow(z_map.T, extent=[
+                                     0, self.n_x * self.delta_x,
+                                     self.n_y * self.delta_y, 0,
+                                    ])
+        _plt.gca().invert_yaxis()
+        _plt.xlabel('x (µm)')
+        _plt.ylabel('y (µm)')
+        cb = _plt.colorbar()
+        cb.set_label('z (nm)')
