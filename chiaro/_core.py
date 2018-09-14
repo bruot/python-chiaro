@@ -392,8 +392,8 @@ class MatrixScan(object):
     def plot_young_moduli(self):
         """Plots E_eff and E_half_v against indentation index"""
 
-        _plt.plot(self.E_half_v * 1e-3)
         _plt.plot(self.E_eff * 1e-3)
+        _plt.plot(self.E_half_v * 1e-3)
         _plt.xlabel('Indentation')
         _plt.ylabel('E (kPa)')
         _plt.legend(['Effective', 'At v = 0.5'])
