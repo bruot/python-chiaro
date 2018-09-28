@@ -8,6 +8,7 @@
 """
 
 import os as _os
+import functools
 import numpy as _numpy
 import datetime as _datetime
 import re as _re
@@ -249,6 +250,7 @@ class MatrixScan(object):
     def _requires_complete(func):
         """Decorator that raises an exception if the _complete attribute is False"""
 
+        @functools.wraps(func)
         def wrapping_func(*args, **kwargs):
             instance = args[0]
             if not instance._complete:
