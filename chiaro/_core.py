@@ -185,11 +185,17 @@ class Indentation(object):
             self.E_eff = float(_parse_single_field(f.readline(),
                                                    'E[eff] (Pa)'))
             # Line 28 + n_pts
-            self.E_half_v = float(_parse_single_field(f.readline(),
-                                                      'E[v=0.50] (Pa)'))
+            regexp = _re.compile('^E\\[v=([0-9.eE+-]+)\\] \(Pa\)\t([0-9.eE+-]+)$')
+            m = _re.match(regexp, f.readline().rstrip('\r\n'))
+            if not m:
+                raise ValueError('Cannot parse E and nu values.')
+            groups = m.groups()
+            self.nu = float(groups[0])
+            self.E = float(groups[1])
+
             f.readline()
 
-            # Line 35: columns headers
+            # Line 30 + n_pts: columns headers
             _check_single_line(f.readline(),
                                'Time (s)\tLoad (uN)\tIndentation (nm)\tCantilever (nm)\tPiezo (nm)\tAuxiliary')
 
@@ -355,7 +361,7 @@ class MatrixScan(object):
         self.D_max_final = _numpy.empty(n)
         self.slope = _numpy.empty(n)
         self.E_eff = _numpy.empty(n)
-        self.E_half_v = _numpy.empty(n)
+        self.E = _numpy.empty(n)
         for k, c in enumerate(scan_coords):
             i = self.indentation(c)
             self.x_pos[k] = i.x_pos
@@ -370,7 +376,7 @@ class MatrixScan(object):
             self.D_max_final[k] = i.D_max_final
             self.slope[k] = i.slope
             self.E_eff[k] = i.E_eff
-            self.E_half_v[k] = i.E_half_v
+            self.E[k] = i.E
 
 
     def indentation(self, coords):
@@ -392,22 +398,22 @@ class MatrixScan(object):
 
 
     def plot_young_moduli(self):
-        """Plots E_eff and E_half_v against indentation index"""
+        """Plots E_eff and E against indentation index"""
 
         _plt.plot(self.E_eff * 1e-3)
-        _plt.plot(self.E_half_v * 1e-3)
+        _plt.plot(self.E * 1e-3)
         _plt.xlabel('Indentation')
         _plt.ylabel('E (kPa)')
-        _plt.legend(['Effective', 'At v = 0.5'])
+        _plt.legend(['Effective', 'Bulk'])
 
 
     @_requires_complete
-    def plot_e_half_v_map(self):
+    def plot_e_v_map(self):
 
         E_map = _numpy.empty((self.n_x, self.n_y))
         for i in range(self.n_x):
             for j in range(self.n_y):
-                E_sub = self.E_half_v[
+                E_sub = self.E[
                         (self.scan_coords[:, 1] == i+1)
                         & (self.scan_coords[:, 2] == j+1)
                         ]
@@ -421,7 +427,7 @@ class MatrixScan(object):
         _plt.xlabel('x (µm)')
         _plt.ylabel('y (µm)')
         cb = _plt.colorbar()
-        cb.set_label('E[nu=0.5] (kPa)')
+        cb.set_label('E (kPa)')
 
 
     @_requires_complete
