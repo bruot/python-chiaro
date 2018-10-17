@@ -449,14 +449,29 @@ class MatrixScan(object):
 
 
     @_requires_complete
-    def plot_piezo_pos_map(self):
+    def plot_piezo_pos_map(self, threshold):
+        """Plots a 2d map of the z surface position
+
+        For each (x, y) position, the surface z position is defined as the
+        first point at which the cantilever deflection becomes greater than a
+        threshold value.  If there are several scans or indentation per (x, y)
+        position, z positions will be averaged over these.
+
+        Args:
+            threshold: Threshold cantilever deflection in micrometers.
+        """
 
         z_map = _numpy.empty((self.n_x, self.n_y))
         for i in range(self.n_x):
             for j in range(self.n_y):
                 rg = (self.scan_coords[:, 1] == i+1) & (self.scan_coords[:, 2] == j+1)
-                z_sub = self.piezo_pos[rg]
-                z_map[i, j] = _numpy.mean(z_sub)
+                coords = self.scan_coords[rg]
+                z_sum = 0.0
+                for coord in coords:
+                    ind = self.indentation(coord)
+                    idx = _numpy.where(ind.z_c >= threshold)[0][0]
+                    z_sum += ind.z_p[idx]
+                z_map[i, j] = z_sum / len(coords)
 
         _plt.imshow(z_map.T, extent=[
                                      0, self.n_x * self.delta_x,
