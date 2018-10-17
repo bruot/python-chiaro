@@ -425,7 +425,8 @@ class MatrixScan(object):
 
 
     @_requires_complete
-    def plot_e_v_map(self):
+    def plot_e_map(self):
+        """Plots a 2d map of the Young modulus landscape"""
 
         E_map = _numpy.empty((self.n_x, self.n_y))
         for i in range(self.n_x):
