@@ -655,7 +655,7 @@ class MatrixScan(object):
                 z_sum = 0.0
                 for coord in coords:
                     ind = self.indentation(coord)
-                    idx = _numpy.where(ind.z_c >= threshold)[0][0]
+                    idx = _numpy.argmax(ind.z_c >= threshold)
                     z_sum += ind.z_p[idx]
                 z_map[i, j] = z_sum / len(coords)
 
