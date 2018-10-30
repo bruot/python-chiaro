@@ -30,10 +30,11 @@ import numpy as _numpy
 import datetime as _datetime
 import re as _re
 import matplotlib.pyplot as _plt
+import scipy.optimize as _optimize
 
 
-def _parse_tab_sep_line(line, required_elems):
-    """Parses a tab-separated line and checks the values of required fields
+def _parse_sep_line(line, required_elems, separator='\t'):
+    """Parses a tab (or other character) -separated line and checks the values of required fields
 
     Args:
         line: line as str
@@ -49,7 +50,7 @@ def _parse_tab_sep_line(line, required_elems):
     """
 
     line = line.rstrip('\r\n')
-    elems = line.split('\t')
+    elems = line.split(separator)
     for col, val in required_elems:
         if elems[col] != val:
             raise ValueError('Cannot parse file: expected "%s" text.' % val)
@@ -60,7 +61,7 @@ def _parse_tab_sep_line(line, required_elems):
 def _parse_single_field(line, req_name):
     """Parses a line of the type "field_name\tvalue\""""
 
-    elems = _parse_tab_sep_line(line, ((0, req_name), ))
+    elems = _parse_sep_line(line, ((0, req_name), ))
 
     return elems[1]
 
@@ -68,6 +69,23 @@ def _parse_single_field(line, req_name):
 def _check_single_line(line, expected_str):
     if line.rstrip('\r\n') != expected_str:
         raise ValueError('Cannot parse file: expected "%s" text.' % expected_str)
+
+
+def _plot_displacements(obj, *args, **kwargs):
+    """Plots the displacements of the piezo, cantilever and computed indentation against time
+
+    Args:
+        obj: Instance of a class with t, z_p, z_c and z_i attributes.
+        *args, **kwargs: Optional arguments passed to the plot() call.
+    """
+
+    _plt.plot(obj.t, obj.z_p,
+              obj.t, obj.z_c,
+              obj.t, obj.z_i, *args, **kwargs)
+    _plt.legend(('Piezo', 'Cantilever', 'Indentation'))
+    _plt.xlabel('t (s)')
+    _plt.ylabel('z (µm)')
+    _plt.gca().invert_yaxis()
 
 
 class Indentation(object):
@@ -93,8 +111,8 @@ class Indentation(object):
 
         with open(path, 'r') as f:
             # Line 1
-            elems = _parse_tab_sep_line(f.readline(),
-                                        ((0, 'Date'), (2, 'Time'), (4, 'Status')))
+            elems = _parse_sep_line(f.readline(),
+                                    ((0, 'Date'), (2, 'Time'), (4, 'Status')))
             date_str = '%s %s' % (elems[1], elems[3])
             date_fmt = '%d/%m/%Y %H:%M:%S'
             self.date = _datetime.datetime.strptime(date_str, date_fmt)
@@ -102,13 +120,13 @@ class Indentation(object):
             # Line 2
             self.name = f.readline().rstrip('\r\n')
             # Line 3
-            elems = _parse_tab_sep_line(f.readline(),
-                                        (
-                                            (0, 'Scan (#)'),
-                                            (2, 'X (#)'),
-                                            (4, 'Y (#)'),
-                                            (6, 'Indentation (#)'),
-                                         ))
+            elems = _parse_sep_line(f.readline(),
+                                    (
+                                        (0, 'Scan (#)'),
+                                        (2, 'X (#)'),
+                                        (4, 'Y (#)'),
+                                        (6, 'Indentation (#)'),
+                                    ))
             self.n_scans = int(elems[1])
             self.n_x = int(elems[3])
             self.n_y = int(elems[5])
@@ -177,9 +195,9 @@ class Indentation(object):
             self.dt_prof = _numpy.empty(n_pts)
             self.z_prof = _numpy.empty(n_pts)
             for i in range(n_pts):
-                elems = _parse_tab_sep_line(lines[i],
-                                            ((0, 'D[Z%d] (nm)' % (i + 1)),
-                                             (2, 't[%d] (s)' % (i + 1))))
+                elems = _parse_sep_line(lines[i],
+                                        ((0, 'D[Z%d] (nm)' % (i + 1)),
+                                         (2, 't[%d] (s)' % (i + 1))))
                 self.z_prof[i] = float(elems[1]) * 1e-3
                 self.dt_prof[i] = float(elems[3])
 
@@ -224,6 +242,12 @@ class Indentation(object):
             self.z_p *= 1e-3
 
 
+    def plot_displacements(self):
+        """Plots the piezo, cantilever and indentation positions versus time"""
+
+        return _plot_displacements(self)
+
+
     def plot_profile(self):
         """Plots the profile of the displacement-controlled indentation"""
 
@@ -234,18 +258,6 @@ class Indentation(object):
         z = _numpy.zeros(n + 1)
         z[1:] = self.z_prof
         _plt.plot(t, z)
-        _plt.xlabel('t (s)')
-        _plt.ylabel('z (µm)')
-        _plt.gca().invert_yaxis()
-
-
-    def plot_displacements(self):
-        """Plots the displacements of the piezo, cantilever and computed indentation against time"""
-
-        _plt.plot(self.t, self.z_p,
-                  self.t, self.z_c,
-                  self.t, self.z_i)
-        _plt.legend(('Piezo', 'Cantilever', 'Indentation'))
         _plt.xlabel('t (s)')
         _plt.ylabel('z (µm)')
         _plt.gca().invert_yaxis()
@@ -265,6 +277,180 @@ class Indentation(object):
         _plt.plot(self.z_i, self.load)
         _plt.xlabel('z (µm)')
         _plt.ylabel('Load (µN)')
+
+
+class DMAExcitation(object):
+    """Part of a DMA indentation experiment representing a single frequency"""
+
+    def _base_sine_fit(self, z):
+        """Fits the t, z data with a sine function"""
+
+        def sine_func(t, A, B, phi):
+            omega = 2.0 * _numpy.pi *self.f
+            return A + B * _numpy.sin(omega * t + phi)
+
+        coeffs, cov = _optimize.curve_fit(sine_func, self.t_last, z,
+                                          p0=[0.0, 1.0, 0.0])
+
+        A, B, phi = coeffs
+        if B < 0:
+            B = -B
+            phi += _numpy.pi
+        phi = phi % (2.0 * _numpy.pi)
+
+        return (A, B, phi)
+
+
+    def __init__(self, f, n, ampl, relax, t, z_p, z_c, z_i):
+        """Initializes a DMAExcitation instance
+
+        Args:
+            f: Frequency of the excitation.
+            n: Number of oscillations.
+            ampl: Amplitude of the oscillations.
+            relax: Waiting time after the last oscillation.
+            t: Time data.
+            z_p: Piezo position data.
+            z_c: Cantilever position data.
+            z_i: Indentation data.
+        """
+
+        self.f = f
+        self.n = n
+        self.ampl = ampl
+        self.relax = relax
+
+        self.t = t
+        self.z_p = z_p
+        self.z_c = z_c
+        self.z_i = z_i
+
+        t_start = (n - 1) / f
+        start = _numpy.argmax(t >= t_start)
+        end = _numpy.argmax(t >= t_start + 1.0 / f)
+        self.t_last = self.t[start:end] - self.t[start]
+        self.z_p_last = self.z_p[start:end] - _numpy.mean(self.z_p[start:end])
+        self.z_c_last = self.z_c[start:end] - _numpy.mean(self.z_c[start:end])
+        self.z_i_last = self.z_i[start:end] - _numpy.mean(self.z_i[start:end])
+
+
+    def last_osc_fit_z_p(self):
+        """Fits the last piezo oscillation with a sine function at the excitation frequency
+
+        The data is fitted to:
+            z_p(t) = A + B * sin(2*pi*t + phi)
+        with f the excitation frequency of the DMAExcitation.
+
+        Returns:
+            A, B, phi: Fit coefficients.
+        """
+
+        return self._base_sine_fit(self.z_p_last)
+
+
+    def last_osc_fit_z_c(self):
+        """Fits the last cantilever oscillation with a sine function at the excitation frequency
+
+        The data is fitted to:
+            z_c(t) = A + B * sin(2*pi*t + phi)
+        with f the excitation frequency of the DMAExcitation.
+
+        Returns:
+            A, B, phi: Fit coefficients.
+        """
+
+        return self._base_sine_fit(self.z_c_last)
+
+
+    def last_osc_fit_z_i(self):
+        """Fits the last indentation oscillation with a sine function at the excitation frequency
+
+        The data is fitted to:
+            z_i(t) = A + B * sin(2*pi*t + phi)
+        with f the excitation frequency of the DMAExcitation.
+
+        Returns:
+            A, B, phi: Fit coefficients.
+        """
+
+        return self._base_sine_fit(self.z_i_last)
+
+
+    def plot_displacements(self, *args, **kwargs):
+        """Plots the piezo, cantilever and indentation curves vs time
+
+        Optional arguments are passed to the plot() call.
+        """
+        return _plot_displacements(self, *args, **kwargs)
+
+
+    def plot_last_osc(self):
+        """Plots the last oscillation of the piezo, cantilever and indentation
+
+        The piezo and cantilever curves are shifted by their base value.
+        """
+
+        _plt.plot(self.t_last, self.z_p_last,
+                  self.t_last, self.z_c_last,
+                  self.t_last, self.z_i_last)
+        _plt.legend(('Piezo', 'Cantilever', 'Indentation'))
+        _plt.xlabel('t (s)')
+        _plt.ylabel('z (µm)')
+        _plt.gca().invert_yaxis()
+
+
+class DMAIndentation(Indentation):
+    """DMA indentation experiment data reader"""
+
+    def __init__(self, path):
+
+        super().__init__(path)
+
+        dma_path = _os.path.splitext(path)[0] + '_DMAinfo.txt'
+        with open(dma_path, 'r') as f:
+            lines = f.readlines()
+            n_f = len(lines)
+            self.dma_t = _numpy.empty(n_f)
+            self.dma_f = _numpy.empty(n_f)
+            self.dma_n = _numpy.empty(n_f)
+            self.dma_ampl = _numpy.empty(n_f)
+            self.dma_relax = _numpy.empty(n_f)
+            for i, line in enumerate(lines):
+                elems = _parse_sep_line(line,
+                                        ((0, 'Time'),
+                                        (2, 'Freq'),
+                                        (4, 'Periods'),
+                                        (6, 'Amp'),
+                                        (8, 'Relaxation'),
+                                       ),
+                                        ' ')
+                self.dma_t[i] = elems[1]
+                self.dma_f[i] = elems[3]
+                self.dma_n[i] = elems[5]
+                self.dma_ampl[i] = elems[7]
+                self.dma_relax[i] = elems[9]
+
+
+    def dma(self, i):
+        """Returns a DMAExcitation instance for the i-th frequency
+
+        Args:
+            i: Index of the DMA excitation.
+
+        Returns:
+            dma: DMAExcitation instance.
+        """
+
+        t_start = self.dma_t[i]
+        t_end = t_start + self.dma_n[i] / self.dma_f[i] + self.dma_relax[i]
+        start = _numpy.argmax(self.t >= t_start)
+        end = _numpy.argmax(self.t >= t_end)
+        return DMAExcitation(self.dma_f[i], self.dma_n[i],
+                             self.dma_ampl[i], self.dma_relax[i],
+                             self.t[start:end] - self.t[start],
+                             self.z_p[start:end],
+                             self.z_c[start:end],
+                             self.z_i[start:end])
 
 
 class MatrixScan(object):
