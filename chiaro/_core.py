@@ -279,6 +279,42 @@ class Indentation(object):
         _plt.ylabel('Load (µN)')
 
 
+    def fit_E_eff_hertz(self, max_indentation, plot=True):
+        """Fits part of the load vs indentation curve with the Hertz model
+
+        The fit is only done on the loading part of the curve and for
+        indentations lower than `max_indentation`.
+
+        The fit includes an offset parameter as experimental data are not
+        perfect.  This parameter is however not physically meaningful.
+
+        Args:
+            max_indentation: Upper boundary of indentation values of the data
+                selected for the fit.
+            plot: If `True`, plots the loading curve and its fit.
+
+        Returns:
+            E_eff: Effective Young modulus.
+            offset: Fit parameter
+        """
+
+        start = _numpy.argmax(self.z_i != 0)
+        end = _numpy.argmax(self.z_i > max_indentation)
+        z_i_red = self.z_i[start:end]
+        load_red = self.load[start:end]
+
+        fit_func = lambda z, E_eff, offset: 4.0 * E_eff / 3.0 * self.tip_radius**0.5 * z**1.5 + offset
+
+        coeffs, cov = _optimize.curve_fit(fit_func, z_i_red, load_red, p0=[1.0, 0.0])
+        E_eff, offset = coeffs
+
+        if plot:
+            self.plot_load_vs_z()
+            _plt.plot(z_i_red, fit_func(z_i_red, E_eff, offset), '-')
+
+        return E_eff * 1e6, offset
+
+
 class DMAExcitation(object):
     """Part of a DMA indentation experiment representing a single frequency"""
 
