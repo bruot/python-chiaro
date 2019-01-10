@@ -29,8 +29,13 @@ import functools
 import numpy as _numpy
 import datetime as _datetime
 import re as _re
+import matplotlib as _matplotlib
 import matplotlib.pyplot as _plt
 import scipy.optimize as _optimize
+
+
+def _usetex():
+    return _matplotlib.rcParams['text.usetex']
 
 
 def _parse_sep_line(line, required_elems, separator='\t'):
@@ -83,8 +88,8 @@ def _plot_displacements(obj, *args, **kwargs):
               obj.t, obj.z_c,
               obj.t, obj.z_i, *args, **kwargs)
     _plt.legend(('Piezo', 'Cantilever', 'Indentation'))
-    _plt.xlabel('t (s)')
-    _plt.ylabel('z (µm)')
+    _plt.xlabel('$t$ (s)' if _usetex() else 't (s)')
+    _plt.ylabel('$z$ ($\mu$m)' if _usetex() else 'z (µm)')
     _plt.gca().invert_yaxis()
 
 
@@ -258,8 +263,8 @@ class Indentation(object):
         z = _numpy.zeros(n + 1)
         z[1:] = self.z_prof
         _plt.plot(t, z)
-        _plt.xlabel('t (s)')
-        _plt.ylabel('z (µm)')
+        _plt.xlabel('$t$ (s)' if _usetex() else 't (s)')
+        _plt.ylabel('$z$ ($\mu$m)' if _usetex() else 'z (µm)')
         _plt.gca().invert_yaxis()
 
 
@@ -267,16 +272,16 @@ class Indentation(object):
         """Plots the computed load against time"""
 
         _plt.plot(self.t, self.load)
-        _plt.xlabel('t (s)')
-        _plt.ylabel('Load (µN)')
+        _plt.xlabel('$t$ (s)' if _usetex() else 't (s)')
+        _plt.ylabel('Load ($\mu$N)' if _usetex() else 'Load (µN)')
 
 
     def plot_load_vs_z(self):
         """Plots the computed load against the indentation"""
 
         _plt.plot(self.z_i, self.load)
-        _plt.xlabel('z (µm)')
-        _plt.ylabel('Load (µN)')
+        _plt.xlabel('$z$ ($\mu$m)' if _usetex() else 'z (µm)')
+        _plt.ylabel('Load ($\mu$N)' if _usetex() else 'Load (µN)')
 
 
     def fit_E_eff_hertz(self, max_indentation, plot=True):
@@ -430,8 +435,8 @@ class DMAExcitation(object):
                   self.t_last, self.z_c_last,
                   self.t_last, self.z_i_last)
         _plt.legend(('Piezo', 'Cantilever', 'Indentation'))
-        _plt.xlabel('t (s)')
-        _plt.ylabel('z (µm)')
+        _plt.xlabel('$t$ (s)' if _usetex() else 't (s)')
+        _plt.ylabel('$z$ ($\mu$m)' if _usetex() else 'z (µm)')
         _plt.gca().invert_yaxis()
 
 
@@ -642,7 +647,7 @@ class MatrixScan(object):
         _plt.plot(self.E_eff * 1e-3)
         _plt.plot(self.E * 1e-3)
         _plt.xlabel('Indentation')
-        _plt.ylabel('E (kPa)')
+        _plt.ylabel('$E$ (kPa)' if _usetex() else 'E (kPa)')
         _plt.legend(['Effective', 'Bulk'])
 
 
@@ -664,10 +669,10 @@ class MatrixScan(object):
                                             self.n_y * self.delta_y, 0,
                                            ])
         _plt.gca().invert_yaxis()
-        _plt.xlabel('x (µm)')
-        _plt.ylabel('y (µm)')
+        _plt.xlabel('$x$ ($\mu$m)' if _usetex() else 'x (µm)')
+        _plt.ylabel('$y$ ($\mu$m)' if _usetex() else 'y (µm)')
         cb = _plt.colorbar()
-        cb.set_label('E (kPa)')
+        cb.set_label('$E$ (kPa)' if _usetex() else 'E (kPa)')
 
 
     @_requires_complete
@@ -700,7 +705,8 @@ class MatrixScan(object):
                                      self.n_y * self.delta_y, 0,
                                     ])
         _plt.gca().invert_yaxis()
-        _plt.xlabel('x (µm)')
-        _plt.ylabel('y (µm)')
+        _plt.xlabel('$x$ ($\mu$m)' if _usetex() else 'x (µm)')
+        _plt.ylabel('$y$ ($\mu$m)' if _usetex() else 'y (µm)')
+
         cb = _plt.colorbar()
-        cb.set_label('z (nm)')
+        cb.set_label('$z$ (nm)' if _usetex() else 'z (nm)')
