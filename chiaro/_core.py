@@ -225,7 +225,7 @@ class Indentation(object):
             self.E_eff = float(_parse_single_field(f.readline(),
                                                    'E[eff] (Pa)'))
             # Line 28 + n_pts
-            regexp = _re.compile('^E\\[v=([0-9.eE+-]+)\\] \(Pa\)\t([0-9.eE+-]+)$')
+            regexp = _re.compile('^E\\[v=([0-9.eE+-]+)\\] \(Pa\)\t([0-9.eE+-]+|NaN)$')
             m = _re.match(regexp, f.readline().rstrip('\r\n'))
             if not m:
                 raise ValueError('Cannot parse E and nu values.')
